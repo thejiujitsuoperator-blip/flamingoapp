@@ -85,6 +85,10 @@ export function MemberProfile({ member, asOf, onClose, onRename }: Props) {
             <dd>{money(member.membershipPaid)}</dd>
           </div>
           <div className="wide">
+            <dt>Pays as (bank statement name)</dt>
+            <dd>{[...new Set(member.payments.map((p) => p.payer?.name).filter(Boolean))].join(", ")}</dd>
+          </div>
+          <div className="wide">
             <dt>UPI ids</dt>
             <dd>{member.vpas.join(", ") || "—"}</dd>
           </div>

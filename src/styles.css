@@ -648,3 +648,21 @@ td input {
     max-width: 100%;
   }
 }
+
+textarea {
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+textarea:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+td .pill {
+  margin-top: 4px;
+}

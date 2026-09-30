@@ -114,3 +114,14 @@ export interface Dataset {
   sources: StatementSource[];
   accountHolder: string | null;
 }
+
+/** A person on the gym's own member list (typed in, pasted, or scanned from screenshots). */
+export interface RosterEntry {
+  id: string;
+  name: string;
+  /** Digits only, last 10 digits of an Indian mobile number when present. */
+  phone: string | null;
+  source: string;
+  /** Manual link to a statement member: a member id, or null to force "no match". Undefined = automatic. */
+  linkedMemberId?: string | null;
+}

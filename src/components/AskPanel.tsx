@@ -2,27 +2,29 @@ import { useEffect, useState } from "react";
 import { buildAiContext } from "../lib/aiContext";
 import type { Analysis } from "../lib/members";
 import { EXAMPLE_QUESTIONS, localQuery, type QueryResult } from "../lib/query";
+import type { RosterMatch } from "../lib/roster";
 import type { Settings } from "../lib/types";
 import { DataTable } from "./DataTable";
 
 interface Props {
   analysis: Analysis;
   settings: Settings;
+  roster: RosterMatch[];
   onOpenMember: (id: string) => void;
 }
 
-async function askClaude(question: string, analysis: Analysis, settings: Settings): Promise<QueryResult> {
+async function askClaude(question: string, analysis: Analysis, settings: Settings, roster: RosterMatch[]): Promise<QueryResult> {
   const res = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, context: buildAiContext(analysis, settings) }),
+    body: JSON.stringify({ question, context: buildAiContext(analysis, settings, roster) }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
   return { ...body, engine: "claude" };
 }
 
-export function AskPanel({ analysis, settings, onOpenMember }: Props) {
+export function AskPanel({ analysis, settings, roster, onOpenMember }: Props) {
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,17 +47,17 @@ export function AskPanel({ analysis, settings, onOpenMember }: Props) {
     try {
       if (aiAvailable && useAi) {
         try {
-          setResult(await askClaude(q, analysis, settings));
+          setResult(await askClaude(q, analysis, settings, roster));
           return;
         } catch (err) {
-          const local = localQuery(q, analysis, settings.renewSoonDays);
+          const local = localQuery(q, analysis, settings.renewSoonDays, roster);
           if (!local) throw err;
           setResult(local);
           setError(`Claude couldn't answer (${(err as Error).message}); showing the built-in answer instead.`);
           return;
         }
       }
-      const local = localQuery(q, analysis, settings.renewSoonDays);
+      const local = localQuery(q, analysis, settings.renewSoonDays, roster);
       if (local) setResult(local);
       else {
         setResult(null);

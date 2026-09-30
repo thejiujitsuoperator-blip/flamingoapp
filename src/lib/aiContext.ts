@@ -1,8 +1,9 @@
 import { monthly, type Analysis } from "./members";
+import type { RosterMatch } from "./roster";
 import type { Settings } from "./types";
 
 /** Compact snapshot of the analysed data that is sent with an AI question. */
-export function buildAiContext(a: Analysis, settings: Settings) {
+export function buildAiContext(a: Analysis, settings: Settings, roster: RosterMatch[] = []) {
   const names = new Map(a.members.map((m) => [m.id, m.name]));
   return {
     as_of: a.asOf,
@@ -33,6 +34,12 @@ export function buildAiContext(a: Analysis, settings: Settings) {
       payer: p.memberId ? names.get(p.memberId) : (p.payer?.name ?? null),
       note: p.payer?.remark || undefined,
       covers: p.coverFrom ? `${p.coverFrom}..${p.coverTo}` : undefined,
+    })),
+    roster: roster.map((r) => ({
+      name: r.entry.name,
+      phone: r.entry.phone,
+      member_id: r.member?.id ?? null,
+      paid_by_other: r.paidBy,
     })),
     monthly: monthly(a).map((r) => ({
       month: r.month,

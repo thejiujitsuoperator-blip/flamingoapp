@@ -2,21 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AskPanel } from "./components/AskPanel";
 import { MemberProfile } from "./components/MemberProfile";
 import { MembersTab } from "./components/MembersTab";
+import { RosterTab } from "./components/RosterTab";
 import { Overview } from "./components/Overview";
 import { SettingsTab } from "./components/SettingsTab";
 import { TransactionsTab } from "./components/TransactionsTab";
 import { formatDate, todayIso } from "./lib/dates";
 import { demoDataset } from "./lib/demo";
 import { analyse } from "./lib/members";
-import { EMPTY_DATASET, loadDataset, loadSettings, saveDataset, saveSettings } from "./lib/storage";
-import type { Dataset, Settings } from "./lib/types";
+import { matchRoster } from "./lib/roster";
+import { EMPTY_DATASET, loadDataset, loadRoster, loadSettings, saveDataset, saveRoster, saveSettings } from "./lib/storage";
+import type { Dataset, RosterEntry, Settings } from "./lib/types";
 
-type Tab = "overview" | "members" | "transactions" | "settings";
+type Tab = "overview" | "members" | "roster" | "transactions" | "settings";
 type AsOfMode = "data" | "today" | "custom";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "members", label: "Members" },
+  { id: "roster", label: "Member list" },
   { id: "transactions", label: "Transactions" },
   { id: "settings", label: "Settings" },
 ];
@@ -24,6 +27,7 @@ const TABS: { id: Tab; label: string }[] = [
 export default function App() {
   const [data, setData] = useState<Dataset>(loadDataset);
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [roster, setRoster] = useState<RosterEntry[]>(loadRoster);
   const [tab, setTab] = useState<Tab>("overview");
   const [asOfMode, setAsOfMode] = useState<AsOfMode>("data");
   const [customDate, setCustomDate] = useState(todayIso());
@@ -33,10 +37,25 @@ export default function App() {
 
   useEffect(() => saveDataset(data), [data]);
   useEffect(() => saveSettings(settings), [settings]);
+  useEffect(() => saveRoster(roster), [roster]);
 
   const dataTo = data.txns.length ? data.txns[data.txns.length - 1].date : todayIso();
   const asOf = asOfMode === "data" ? dataTo : asOfMode === "today" ? todayIso() : customDate;
-  const analysis = useMemo(() => analyse(data, settings, asOf), [data, settings, asOf]);
+  const { analysis, rosterMatches } = useMemo(() => {
+    // Match the member list against statement names, then show list names across the dashboard.
+    const base = analyse(data, settings, asOf);
+    const matches = matchRoster(roster, base.members);
+    const listNames = Object.fromEntries(
+      matches.filter((m) => m.member && !m.paidBy && m.confidence !== "possible").map((m) => [m.member!.id, m.entry.name]),
+    );
+    if (!Object.keys(listNames).length) return { analysis: base, rosterMatches: matches };
+    const named = analyse(data, { ...settings, memberNames: { ...listNames, ...settings.memberNames } }, asOf);
+    const byId = new Map(named.members.map((m) => [m.id, m]));
+    return {
+      analysis: named,
+      rosterMatches: matches.map((m) => ({ ...m, member: m.member ? (byId.get(m.member.id) ?? m.member) : null })),
+    };
+  }, [data, settings, asOf, roster]);
   const profile = analysis.members.find((m) => m.id === profileId) ?? null;
 
   async function onFiles(files: FileList | null) {
@@ -144,7 +163,7 @@ export default function App() {
         </section>
       ) : (
         <>
-          <AskPanel analysis={analysis} settings={settings} onOpenMember={setProfileId} />
+          <AskPanel analysis={analysis} settings={settings} roster={rosterMatches} onOpenMember={setProfileId} />
 
           <nav className="tabs" role="tablist">
             {TABS.map((t) => (
@@ -163,6 +182,14 @@ export default function App() {
           <main>
             {tab === "overview" && <Overview analysis={analysis} settings={settings} onOpenMember={setProfileId} />}
             {tab === "members" && <MembersTab analysis={analysis} onOpenMember={setProfileId} />}
+            {tab === "roster" && (
+              <RosterTab
+                matches={rosterMatches}
+                analysis={analysis}
+                setRoster={setRoster}
+                onOpenMember={setProfileId}
+              />
+            )}
             {tab === "transactions" && (
               <TransactionsTab analysis={analysis} settings={settings} setSettings={setSettings} />
             )}

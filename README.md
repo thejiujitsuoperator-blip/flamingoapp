@@ -6,6 +6,8 @@ Upload an HDFC account statement (`.xls`) and get:
 - **Member profiles** with each member's full payment history and the membership period each payment covered
 - **Month-wise revenue**, split into membership fees, drop-in classes, merch and other income
 - **Active members**, members **due for renewal**, and members **up for renewal in the next 7 days**
+- **Your member list vs. the bank**: scan screenshots of your member list (or paste names) and see who on it is
+  paid up, who has no payments, who is paid for by someone else, and who pays but isn't on the list
 - **Plain-English questions**, e.g. "who hasn't renewed since January?", "revenue in Feb", "payments by Meera"
 
 ## Running it
@@ -53,6 +55,19 @@ up to 10 days late) extends the current membership instead of restarting it.
 
 **Statuses** are worked out for the "Status as of" date (default: the last transaction in your statements):
 *active* until the paid period ends, *due for renewal* for 30 days after that, then *lapsed*.
+
+## Member list
+
+The **Member list** tab takes names from screenshots (read by Claude; needs `ANTHROPIC_API_KEY`) or pasted text,
+one person per line with an optional phone number. Each name is matched to a payer in the statements using:
+
+- phone numbers against UPI ids like `9876501234@ybl`
+- names, allowing for the bank's truncated or run-together names ("MEERA LAKSHMI VENKAT", "ROHANDESAI")
+  and UPI ids made of the name ("nehajoshi@okicici")
+- payment notes, so a member whose fee someone else pays ("TARA MENON" on someone else's transfer) is still found
+
+A shared first name alone is not treated as a match. Matched members are shown under their list name everywhere in
+the dashboard. Wrong or missing matches can be fixed from the dropdown on each row.
 
 ## Development
 

@@ -1,6 +1,7 @@
 import { addDays, addMonths, formatDate, formatMonth, monthKey } from "./dates";
 import { money } from "./format";
 import { activeMembers, dueForRenewal, monthly, renewingSoon, type Analysis } from "./members";
+import type { RosterMatch } from "./roster";
 import { CATEGORY_LABELS, REVENUE_CATEGORIES, type Category, type Member, type Payment } from "./types";
 
 export interface QueryTable {
@@ -138,7 +139,12 @@ function categoryFrom(q: string): Category[] {
  * Answers common questions without an AI model, using keyword and pattern matching.
  * Returns null when the question isn't understood.
  */
-export function localQuery(question: string, a: Analysis, renewSoonDays = 7): QueryResult | null {
+export function localQuery(
+  question: string,
+  a: Analysis,
+  renewSoonDays = 7,
+  roster: RosterMatch[] = [],
+): QueryResult | null {
   const q = question.toLowerCase().trim();
   const range = parseRange(q, a);
   const members = a.members;
@@ -148,6 +154,35 @@ export function localQuery(question: string, a: Analysis, renewSoonDays = 7): Qu
     memberIds: ids,
     engine: "local",
   });
+
+  // Questions about the gym's own member list vs. the statements
+  if (roster.length && /roster|(member|the|my|our) list|listed/.test(q)) {
+    if (/not on|n.t on|missing from|aren.t listed|not listed/.test(q)) {
+      const onList = new Set(roster.filter((r) => r.member && !r.paidBy).map((r) => r.member!.id));
+      const list = members.filter((m) => !onList.has(m.id) && m.status !== "lapsed");
+      return result(
+        `${list.length} paying member${list.length === 1 ? " is" : "s are"} not on your member list.`,
+        memberRows(list),
+        list.map((m) => m.id),
+      );
+    }
+    if (/not paid|n.t paid|not paying|unpaid|no payment|n.t renewed|not active|inactive|owe|pending/.test(q)) {
+      const list = roster.filter((r) => !r.member || r.member.status !== "active");
+      return result(
+        `${list.length} of ${roster.length} people on your list have no active paid membership as of ${formatDate(a.asOf)}.`,
+        {
+          columns: ["Name on list", "Matched payer", "Status", "Last payment"],
+          rows: list.map((r) => [
+            r.entry.name,
+            r.member ? r.member.name : "—",
+            r.member ? `${r.member.status} (expired ${formatDate(r.member.expiry)})` : "no payments found",
+            r.member ? formatDate(r.member.lastPaid) : "—",
+          ]),
+        },
+        list.flatMap((r) => (r.member ? [r.member.id] : [])),
+      );
+    }
+  }
 
   // Renewals in the next N days
   const soon = q.match(/(?:next|coming|within|in)\s+(\w+)\s+(day|week)s?/);
