@@ -66,7 +66,12 @@ one person per line with an optional phone number. Each name is matched to a pay
   and UPI ids made of the name ("nehajoshi@okicici")
 - payment notes, so a member whose fee someone else pays ("TARA MENON" on someone else's transfer) is still found
 
-A shared first name alone is not treated as a match. Matched members are shown under their list name everywhere in
+Contact-style labels are split off the name and kept as tags: "Karan Enquiry April 2026" becomes *Karan* with
+tags *Enquiry* and *April 2026*; "Nikhil Pooja Friend" becomes *Nikhil*, *Friend of Pooja*; "Flamingo" is dropped.
+People who only paid for merch or drop-in classes are shown with those payments rather than as "no payments".
+
+A shared first name alone is not treated as a match, and a single-name entry ("Anil") is marked *Check this*
+when several people on the list share that first name. Matched members are shown under their list name everywhere in
 the dashboard. Wrong or missing matches can be fixed from the dropdown on each row.
 
 ## Development

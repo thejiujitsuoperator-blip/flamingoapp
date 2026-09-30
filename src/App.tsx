@@ -44,7 +44,7 @@ export default function App() {
   const { analysis, rosterMatches } = useMemo(() => {
     // Match the member list against statement names, then show list names across the dashboard.
     const base = analyse(data, settings, asOf);
-    const matches = matchRoster(roster, base.members);
+    const matches = matchRoster(roster, base.members, base.payments);
     const listNames = Object.fromEntries(
       matches.filter((m) => m.member && !m.paidBy && m.confidence !== "possible").map((m) => [m.member!.id, m.entry.name]),
     );

@@ -118,7 +118,12 @@ export interface Dataset {
 /** A person on the gym's own member list (typed in, pasted, or scanned from screenshots). */
 export interface RosterEntry {
   id: string;
+  /** The person's name, with contact-list labels like "Flamingo" or "April Trial" removed. */
   name: string;
+  /** The entry exactly as it appeared on the list, when it differs from the name. */
+  label?: string;
+  /** Labels pulled out of the entry: "Trial", "Enquiry", "Friend of Asha", "Age 14", "April 2026"… */
+  tags?: string[];
   /** Digits only, last 10 digits of an Indian mobile number when present. */
   phone: string | null;
   source: string;

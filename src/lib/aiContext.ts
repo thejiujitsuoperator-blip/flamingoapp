@@ -37,7 +37,13 @@ export function buildAiContext(a: Analysis, settings: Settings, roster: RosterMa
     })),
     roster: roster.map((r) => ({
       name: r.entry.name,
+      label: r.entry.label,
+      tags: r.entry.tags,
       phone: r.entry.phone,
+      match: r.confidence,
+      non_member_payments: r.otherPayments.length
+        ? r.otherPayments.map((p) => ({ date: p.date, amount: p.amount, category: p.category }))
+        : undefined,
       member_id: r.member?.id ?? null,
       paid_by_other: r.paidBy,
     })),

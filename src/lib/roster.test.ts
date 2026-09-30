@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyse } from "./members";
-import { matchRoster, mergeRoster, parseRosterText } from "./roster";
+import { matchRoster, mergeRoster, parseContactLabel, parseRosterText } from "./roster";
 import { DEFAULT_SETTINGS } from "./settings";
 import type { Dataset, Txn } from "./types";
 
@@ -26,6 +26,7 @@ const data: Dataset = {
     credit("2026-01-09", "NEHA SHARMA", "nehajoshi@okicici", 4000),
     credit("2026-01-10", "ANITA RAO", "anita915@okhdfcbank", 5000),
     credit("2026-01-11", "KIRAN PATIL", "9876501234@ybl", 12000),
+    credit("2026-01-12", "DEV MALHOTRA", "devmalhotra@oksbi", 7000, "GI"),
   ],
 };
 const members = analyse(data, DEFAULT_SETTINGS, "2026-01-31").members;
@@ -44,6 +45,29 @@ describe("parseRosterText", () => {
   it("skips duplicates when merging", () => {
     const first = parseRosterText("Meera\nArjun", "t");
     expect(mergeRoster(first, parseRosterText("meera\nZoya", "t")).added).toBe(1);
+  });
+});
+
+describe("parseContactLabel", () => {
+  it.each([
+    ["Rohit Flamingo", "Rohit", []],
+    ["Karan Enquiry April 2026", "Karan", ["Enquiry", "April 2026"]],
+    ["Nikhil Pooja Friend", "Nikhil", ["Friend of Pooja"]],
+    ["Aditya 14yr Old", "Aditya", ["Age 14"]],
+    ["Varun Morning flamingo Enquiry", "Varun", ["Enquiry", "Morning batch"]],
+    ["Sameer Flamingo Jiu Jitsu", "Sameer", []],
+    ["Harpreet (Harry)", "Harpreet", ["aka Harry"]],
+    ["Jay Singh Mar 23 Enquiry", "Jay Singh", ["Enquiry", "Mar 23"]],
+    ["Leo IJJ", "Leo", ["IJJ"]],
+    ["May Flower", "May Flower", []],
+  ])("%s", (label, name, tags) => {
+    expect(parseContactLabel(label)).toEqual({ name, tags });
+  });
+
+  it("keeps same-name contacts as separate entries and ignores bullets and letter headers", () => {
+    const r = parseRosterText("A\n\n* Karan\n* Karan May 26\n* Karan Enquiry April 2026", "t");
+    expect(r.map((e) => e.name)).toEqual(["Karan", "Karan", "Karan"]);
+    expect(new Set(r.map((e) => e.id)).size).toBe(3);
   });
 });
 
@@ -76,6 +100,21 @@ describe("matchRoster", () => {
   it("doesn't match on a shared first name alone", () => {
     expect(m["Anita Bose"].member).toBeNull();
     expect(m["Nobody Here"].confidence).toBe("none");
+  });
+
+  it("flags first-name-only matches when several people on the list share the name", () => {
+    const list = parseRosterText("Anil April Trial\nAnil Kumar Rao\nNeha Joshi Sharma", "t");
+    const r = byName(matchRoster(list, members));
+    expect(r["Anil"]).toMatchObject({ confidence: "possible" });
+    expect(r["Anil"].note).toMatch(/2 people/);
+    expect(r["Neha Joshi Sharma"].confidence).toBe("likely");
+  });
+
+  it("finds merch-only or drop-in-only payments for people who aren't fee-paying members", () => {
+    const a = analyse(data, DEFAULT_SETTINGS, "2026-01-31");
+    const [dev] = matchRoster(parseRosterText("Dev Malhotra", "t"), a.members, a.payments);
+    expect(dev.member).toBeNull();
+    expect(dev.otherPayments.map((p) => [p.category, p.amount])).toEqual([["merch", 7000]]);
   });
 
   it("lets manual links override automatic ones", () => {

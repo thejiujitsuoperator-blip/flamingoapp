@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatDate } from "../lib/dates";
 import { money } from "../lib/format";
+import { CATEGORY_LABELS } from "../lib/types";
 import type { Analysis } from "../lib/members";
 import { mergeRoster, parseRosterText, rosterId, type MatchConfidence, type RosterMatch } from "../lib/roster";
 import type { RosterEntry } from "../lib/types";
@@ -24,6 +25,8 @@ const CONFIDENCE: Record<MatchConfidence, { label: string; tone: string }> = {
 const AUTO = "__auto";
 const NONE = "__none";
 
+const isProspect = (m: RosterMatch) => (m.entry.tags ?? []).some((t) => t === "Trial" || t === "Enquiry");
+
 /** Shrinks a screenshot so its long edge is at most 1600px (the model downsizes larger images anyway). */
 async function toBase64Png(file: File): Promise<{ data: string; mediaType: "image/png" }> {
   const bitmap = await createImageBitmap(file);
@@ -40,7 +43,7 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
   const [text, setText] = useState("");
   const [scanStatus, setScanStatus] = useState<{ kind: "busy" | "ok" | "error"; text: string } | null>(null);
   const [aiAvailable, setAiAvailable] = useState(false);
-  const [filter, setFilter] = useState<"all" | "unmatched" | "check" | "inactive">("all");
+  const [filter, setFilter] = useState<"all" | "unmatched" | "check" | "inactive" | "prospects">("all");
   const shotInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -104,6 +107,7 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
     unmatched: matches.filter((m) => !m.member).length,
     check: matches.filter((m) => m.confidence === "possible").length,
     inactive: matches.filter((m) => m.member && m.member.status !== "active").length,
+    prospects: matches.filter((m) => isProspect(m)).length,
   };
   const shown = matches.filter((m) =>
     filter === "all"
@@ -112,7 +116,9 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
         ? !m.member
         : filter === "check"
           ? m.confidence === "possible"
-          : m.member && m.member.status !== "active",
+          : filter === "prospects"
+            ? isProspect(m)
+            : m.member && m.member.status !== "active",
   );
   const sortedMembers = [...analysis.members].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -176,6 +182,7 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
                 ["inactive", "Not paid up"],
                 ["unmatched", "No payments"],
                 ["check", "Check match"],
+                ["prospects", "Trials & enquiries"],
               ] as const
             ).map(([k, label]) => (
               <button key={k} role="radio" aria-checked={filter === k} className={filter === k ? "on" : ""} onClick={() => setFilter(k)}>
@@ -209,7 +216,17 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
                         ) : (
                           m.entry.name
                         )}
+                        {m.entry.label && <div className="muted small">“{m.entry.label}”</div>}
                         {m.entry.phone && <div className="muted small">{m.entry.phone}</div>}
+                        {m.entry.tags && m.entry.tags.length > 0 && (
+                          <div className="tags">
+                            {m.entry.tags.map((t) => (
+                              <span key={t} className="tag">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <select
@@ -234,7 +251,14 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
                           </optgroup>
                         </select>
                         <div className="small">
-                          <span className={`pill ${c.tone}`}>{m.paidBy ? "Paid by someone else" : c.label}</span>
+                          <span className={`pill ${m.otherPayments.length ? "neutral" : c.tone}`}>
+                            {m.paidBy
+                              ? "Paid by someone else"
+                              : m.otherPayments.length
+                                ? `Only ${[...new Set(m.otherPayments.map((p) => CATEGORY_LABELS[p.category].toLowerCase()))].join(" / ")}: ${money(m.otherPayments.reduce((t, p) => t + p.amount, 0))}`
+                                : c.label}
+                          </span>
+                          {m.note && <div className="muted">{m.note}</div>}
                         </div>
                       </td>
                       <td>{m.member ? <StatusPill member={m.member} /> : <span className="muted">—</span>}</td>
