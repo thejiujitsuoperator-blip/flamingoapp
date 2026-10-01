@@ -27,9 +27,9 @@ npm start            # serves the built app and API on http://localhost:8787
 ### As a claude.ai artifact
 
 `npm run build:artifact` writes the whole app as one self-contained page, `dist-artifact/flamingo-members.html`,
-for publishing as a private claude.ai artifact. There, questions the built-in parser can't answer and screenshot
-scanning go to Claude through the viewer's own claude.ai account (the artifact `sample` capability), so no server
-or API key is needed.
+for publishing as a private claude.ai artifact with the capabilities `db`, `assets`, `user`, `downloads`, `sample`
+and `mcp` (Google Drive `create_file`). There, questions the built-in parser can't answer and screenshot scanning
+go to Claude through the viewer's own claude.ai account, so no server or API key is needed.
 
 ### Claude answers when self-hosted
 
@@ -37,12 +37,36 @@ To answer free-form questions with Claude, set `ANTHROPIC_API_KEY` in the server
 Without it, questions are answered by a built-in parser that understands renewals, revenue by month or date range,
 active/due/lapsed/new members, top payers, a member's name, and amount filters.
 
+## Upload history and audit
+
+Nothing is ever overwritten. Each statement upload, each version of the member list and each manual change
+(reclassified payment, corrected match, renamed member, settings edit) is added to a history, shown in the
+**History** tab:
+
+- **Statement uploads** keep the original file, the parsed rows, the bank's own summary, the settings in force at
+  the time, and the results of these checks:
+
+  | Check | Catches |
+  |---|---|
+  | Rows read vs the bank's summary (counts and totals) | rows missed or misread |
+  | Running balance row by row, and against the bank's closing balance | missing or altered transactions |
+  | Opening balance vs the previous statement's closing balance, and date gaps | gaps or overlaps between statements |
+  | Overlapping dates vs earlier uploads, line by line | the bank's file changing after the fact |
+  | Revenue for months already covered, before vs after | earlier months changing |
+  | Same file uploaded twice (by fingerprint) | double counting (the upload is refused) |
+
+- **Compare with now** rebuilds the dashboard as it stood right after any upload and shows, month by month, what
+  reads differently today.
+- For dates covered by more than one upload, the newest statement is used; the older ones stay in the history.
+
+Where it's kept: on the published claude.ai page, in the page's own storage (owner writes, anyone it's shared with
+can read), with each upload and member-list version also copied to a "Flamingo Members backups" folder in Google
+Drive through the owner's claude.ai Google Drive connector. Run locally, the same history is kept in the browser's
+`localStorage` (without the original files or Drive backups).
+
 ## How the data is interpreted
 
-Statements are parsed in the browser and stored only in that browser's `localStorage`, so they don't follow you to
-another browser or device. Upload more statements any
-time; overlapping transactions are de-duplicated. If you use Claude answers, a summary of members and payments is
-sent to the server with the question.
+If you use Claude answers, a summary of members and payments is sent along with the question.
 
 Each credit is classified:
 
@@ -87,7 +111,7 @@ the dashboard. Wrong or missing matches can be fixed from the dropdown on each r
 ## Development
 
 ```bash
-npm test            # unit tests (parser, classification, membership logic, query engine)
+npm test            # unit tests (parser, classification, membership logic, audit checks, query engine)
 npm run typecheck
 ```
 

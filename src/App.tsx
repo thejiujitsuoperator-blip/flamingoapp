@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AskPanel } from "./components/AskPanel";
+import { HistoryTab } from "./components/HistoryTab";
 import { MemberProfile } from "./components/MemberProfile";
 import { MembersTab } from "./components/MembersTab";
 import { RosterTab } from "./components/RosterTab";
@@ -7,14 +8,15 @@ import { Overview } from "./components/Overview";
 import { SettingsTab } from "./components/SettingsTab";
 import { TransactionsTab } from "./components/TransactionsTab";
 import logo from "./assets/logo.svg";
+import { combineImports, worstStatus } from "./lib/audit";
 import { formatDate, todayIso } from "./lib/dates";
 import { demoDataset } from "./lib/demo";
-import { analyse } from "./lib/members";
+import { analyse, monthly } from "./lib/members";
 import { matchRoster } from "./lib/roster";
-import { EMPTY_DATASET, loadDataset, loadRoster, loadSettings, saveDataset, saveRoster, saveSettings } from "./lib/storage";
-import type { Dataset, RosterEntry, Settings } from "./lib/types";
+import { useHistoryStore } from "./lib/useHistoryStore";
+import { currentRoster } from "./lib/vault";
 
-type Tab = "overview" | "members" | "roster" | "transactions" | "settings";
+type Tab = "overview" | "members" | "roster" | "transactions" | "history" | "settings";
 type AsOfMode = "data" | "today" | "custom";
 
 const TABS: { id: Tab; label: string }[] = [
@@ -22,77 +24,99 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "members", label: "Members" },
   { id: "roster", label: "Member list" },
   { id: "transactions", label: "Transactions" },
+  { id: "history", label: "History" },
   { id: "settings", label: "Settings" },
 ];
 
 export default function App() {
-  // First visit: open on made-up demo data so the dashboard shows what it does.
-  const [data, setData] = useState<Dataset>(() => {
-    const stored = loadDataset();
-    return stored.txns.length || stored.sources.length ? stored : demoDataset();
-  });
-  const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [roster, setRoster] = useState<RosterEntry[]>(loadRoster);
+  const store = useHistoryStore();
+  const { state, vault } = store;
   const [tab, setTab] = useState<Tab>("overview");
   const [asOfMode, setAsOfMode] = useState<AsOfMode>("data");
   const [customDate, setCustomDate] = useState(todayIso());
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ kind: "ok" | "warn" | "error"; text: string; toHistory?: boolean } | null>(null);
+  const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => saveDataset(data), [data]);
-  useEffect(() => saveSettings(settings), [settings]);
-  useEffect(() => saveRoster(roster), [roster]);
+  const demo = useMemo(() => demoDataset(), []);
+  const isDemo = !!state && state.imports.length === 0;
+  const data = useMemo(() => (!state || isDemo ? demo : combineImports(state.imports, state.rows)), [state, isDemo, demo]);
+  const settings = state?.config.settings;
+  const roster = useMemo(() => (state ? currentRoster(state) : []), [state]);
+  const canEdit = !!vault?.canWrite && !isDemo;
 
   const dataTo = data.txns.length ? data.txns[data.txns.length - 1].date : todayIso();
   const asOf = asOfMode === "data" ? dataTo : asOfMode === "today" ? todayIso() : customDate;
   const { analysis, rosterMatches } = useMemo(() => {
+    const s = state?.config.settings;
+    if (!s) return { analysis: null, rosterMatches: [] };
     // Match the member list against statement names, then show list names across the dashboard.
-    const base = analyse(data, settings, asOf);
+    const base = analyse(data, s, asOf);
     const matches = matchRoster(roster, base.members, base.payments);
     const listNames = Object.fromEntries(
       matches.filter((m) => m.member && !m.paidBy && m.confidence !== "possible").map((m) => [m.member!.id, m.entry.name]),
     );
     if (!Object.keys(listNames).length) return { analysis: base, rosterMatches: matches };
-    const named = analyse(data, { ...settings, memberNames: { ...listNames, ...settings.memberNames } }, asOf);
+    const named = analyse(data, { ...s, memberNames: { ...listNames, ...s.memberNames } }, asOf);
     const byId = new Map(named.members.map((m) => [m.id, m]));
     return {
       analysis: named,
       rosterMatches: matches.map((m) => ({ ...m, member: m.member ? (byId.get(m.member.id) ?? m.member) : null })),
     };
-  }, [data, settings, asOf, roster]);
-  const profile = analysis.members.find((m) => m.id === profileId) ?? null;
+  }, [data, state?.config.settings, asOf, roster]);
+  const nowMonths = useMemo(() => (analysis ? monthly(analysis) : []), [analysis]);
+  const profile = analysis?.members.find((m) => m.id === profileId) ?? null;
 
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
-    // The spreadsheet library is large, so it only loads when a file is uploaded.
-    const { mergeTxns, parseStatement } = await import("./lib/parseStatement");
-    let next = data;
-    const messages: string[] = [];
-    for (const file of Array.from(files)) {
-      try {
-        const parsed = parseStatement(await file.arrayBuffer(), file.name);
-        const base = next.sources.some((s) => s.fileName === "Demo data") ? EMPTY_DATASET : next;
-        const { txns, added } = mergeTxns(base.txns, parsed.txns);
-        next = {
-          txns,
-          sources: [...base.sources, parsed.source],
-          accountHolder: base.accountHolder ?? parsed.source.accountHolder,
-        };
-        messages.push(`${file.name}: ${added} new transactions (${parsed.txns.length - added} already loaded)`);
-      } catch (err) {
-        setNotice({ kind: "error", text: `${file.name}: ${(err as Error).message}` });
-        return;
+    setUploading(true);
+    const lines: string[] = [];
+    let attention = false;
+    try {
+      for (const file of Array.from(files)) {
+        try {
+          const rec = await store.importStatement(file);
+          const status = worstStatus(rec.checks);
+          attention ||= status === "fail" || status === "warn";
+          lines.push(
+            `${file.name}: ${rec.newRowCount} new transactions. ${status === "fail" ? "Problems found in the checks." : status === "warn" ? "Some checks need a look." : "All checks passed."}`,
+          );
+        } catch (err) {
+          lines.push(`${file.name}: ${(err as Error).message}`);
+          attention = true;
+        }
       }
+      setAsOfMode("data");
+      setNotice({ kind: attention ? "warn" : "ok", text: lines.join(" "), toHistory: true });
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
     }
-    setData(next);
-    setAsOfMode("data");
-    setNotice({ kind: "ok", text: messages.join(" · ") });
-    if (fileInput.current) fileInput.current.value = "";
+  }
+
+  if (store.loadError) {
+    return (
+      <div className="app">
+        <section className="empty">
+          <h2>Your history couldn't be loaded</h2>
+          <p className="muted">{store.loadError}</p>
+          <button className="primary" onClick={() => location.reload()}>
+            Reload
+          </button>
+        </section>
+      </div>
+    );
+  }
+  if (!state || !vault || !analysis || !settings) {
+    return (
+      <div className="app">
+        <p className="muted loading">Loading your statements and member list…</p>
+      </div>
+    );
   }
 
   const hasData = data.txns.length > 0;
-  const isDemo = data.sources.some((src) => src.fileName === "Demo data");
 
   return (
     <div
@@ -130,9 +154,11 @@ export default function App() {
               )}
             </label>
           )}
-          <button className="primary" onClick={() => fileInput.current?.click()}>
-            Upload statement
-          </button>
+          {vault.canWrite && (
+            <button className="primary" onClick={() => fileInput.current?.click()} disabled={uploading}>
+              {uploading ? "Checking statement…" : "Upload statement"}
+            </button>
+          )}
           <input
             ref={fileInput}
             type="file"
@@ -146,40 +172,73 @@ export default function App() {
 
       {notice && (
         <div className={`notice ${notice.kind}`} role="status">
-          <span>{notice.text}</span>
+          <span>
+            {notice.text}{" "}
+            {notice.toHistory && (
+              <button
+                className="link"
+                onClick={() => {
+                  setTab("history");
+                  setNotice(null);
+                }}
+              >
+                See the checks in History
+              </button>
+            )}
+          </span>
           <button className="ghost" onClick={() => setNotice(null)} aria-label="Dismiss">
             ×
           </button>
         </div>
       )}
+      {store.saveError && <div className="notice error">{store.saveError}</div>}
 
-      {isDemo && (
+      {store.legacy && vault.canWrite && (
         <div className="notice warn demo-banner">
           <span>
-            <strong>Demo data.</strong> These members and payments are made up. Upload your bank statement to see your
-            gym's numbers; the demo data is replaced.
+            <strong>Earlier uploads found in this browser.</strong> {store.legacy.txns.length} transactions and{" "}
+            {store.legacy.roster.length} member-list names from before the history was added. Move them into the history
+            so they're kept {vault.kind === "cloud" ? "on claude.ai and backed up to Drive" : "with every later upload"}.
           </span>
-          <button className="primary" onClick={() => fileInput.current?.click()}>
-            Upload statement
-          </button>
+          <span className="row">
+            <button
+              className="primary"
+              onClick={async () => {
+                try {
+                  await store.migrateLegacy();
+                  setNotice({ kind: "ok", text: "Earlier uploads moved into the history.", toHistory: true });
+                } catch (err) {
+                  setNotice({ kind: "error", text: (err as Error).message });
+                }
+              }}
+            >
+              Move into history
+            </button>
+            <button onClick={store.dismissLegacy}>Not now</button>
+          </span>
         </div>
       )}
 
-      {!hasData ? (
-        <section className="empty">
-          <h2>Upload a bank statement to get started</h2>
-          <p className="muted">
-            Drop your HDFC account statement (.xls) anywhere on this page. It's read in your browser and kept in this
-            browser's storage — upload more months later and they're merged automatically.
-          </p>
-          <div className="row">
-            <button className="primary" onClick={() => fileInput.current?.click()}>
-              Choose statement file
+      {isDemo && !store.legacy && (
+        <div className="notice warn demo-banner">
+          <span>
+            <strong>Demo data.</strong> These members and payments are made up.{" "}
+            {vault.canWrite
+              ? "Upload your bank statement to see your gym's numbers; every statement you upload is kept in the History tab."
+              : "The owner hasn't uploaded a statement yet."}
+          </span>
+          {vault.canWrite && (
+            <button className="primary" onClick={() => fileInput.current?.click()} disabled={uploading}>
+              Upload statement
             </button>
-            <button onClick={() => setData(demoDataset())}>Try with demo data</button>
-          </div>
-        </section>
-      ) : (
+          )}
+        </div>
+      )}
+      {vault.kind === "browser" && !isDemo && (
+        <p className="muted small storage-note">Saved in this browser only. Open the page on claude.ai to keep it across devices.</p>
+      )}
+
+      {hasData && (
         <>
           <AskPanel analysis={analysis} settings={settings} roster={rosterMatches} onOpenMember={setProfileId} />
 
@@ -204,24 +263,26 @@ export default function App() {
               <RosterTab
                 matches={rosterMatches}
                 analysis={analysis}
-                setRoster={setRoster}
+                roster={roster}
+                onSaveVersion={store.saveRosterVersion}
+                onLink={store.setRosterLink}
+                canWrite={vault.canWrite}
                 onOpenMember={setProfileId}
               />
             )}
             {tab === "transactions" && (
-              <TransactionsTab analysis={analysis} settings={settings} setSettings={setSettings} />
+              <TransactionsTab analysis={analysis} settings={settings} setSettings={store.updateSettings} readOnly={!canEdit} />
             )}
-            {tab === "settings" && (
-              <SettingsTab
-                settings={settings}
-                setSettings={setSettings}
-                data={data}
-                onClear={() => {
-                  setData(EMPTY_DATASET);
-                  setNotice({ kind: "ok", text: "All statement data cleared from this browser." });
-                }}
+            {tab === "history" && (
+              <HistoryTab
+                state={state}
+                vault={vault}
+                nowMonths={nowMonths}
+                onRetryImportBackup={store.retryImportBackup}
+                onRetryRosterBackup={store.retryRosterBackup}
               />
             )}
+            {tab === "settings" && <SettingsTab settings={settings} setSettings={store.updateSettings} data={data} readOnly={!vault.canWrite} />}
           </main>
         </>
       )}
@@ -231,8 +292,8 @@ export default function App() {
           member={profile}
           asOf={analysis.asOf}
           onClose={() => setProfileId(null)}
-          onRename={(name) =>
-            setSettings((s) => ({ ...s, memberNames: { ...s.memberNames, [profile.id]: name } }))
+          onRename={
+            canEdit ? (name) => store.updateSettings((s) => ({ ...s, memberNames: { ...s.memberNames, [profile.id]: name } })) : undefined
           }
         />
       )}

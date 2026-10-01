@@ -21,6 +21,11 @@ function statementFile(rows: [string, string, number, number][]): ArrayBuffer {
     ...rows.map(([date, narration, wd, dep], i) => [date, narration, String(1000 + i), date, wd || "", dep || "", 50000]),
     [],
     ["STATEMENT SUMMARY  :-"],
+    ["Opening Balance", "", "", "", "Debits", "Credits", "Closing Bal"],
+    [50000, "", "", "", 700, 99666, 148966],
+    [],
+    ["", "", "", "", "Dr Count", "Cr Count", ""],
+    ["", "", "", "", 1, 11, ""],
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Sheet 1");
@@ -55,7 +60,15 @@ describe("parseStatement", () => {
     expect(d.accountHolder).toBe("JANE OWNER");
     expect(d.txns).toHaveLength(12);
     expect(d.txns[0]).toMatchObject({ date: "2026-01-05", deposit: 4000, withdrawal: 0 });
-    expect(d.sources[0]).toMatchObject({ from: "2026-01-05", to: "2026-03-01" });
+    expect(d.sources[0]).toMatchObject({ from: "2026-01-05", to: "2026-03-01", periodFrom: "2026-01-01", periodTo: "2026-03-31" });
+    expect(d.sources[0].summary).toEqual({
+      opening: 50000,
+      debits: 700,
+      credits: 99666,
+      closing: 148966,
+      debitCount: 1,
+      creditCount: 11,
+    });
   });
 
   it("de-duplicates when the same statement is merged twice", () => {

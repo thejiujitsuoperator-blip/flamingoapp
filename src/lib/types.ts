@@ -101,12 +101,27 @@ export interface Settings {
   memberNames: Record<string, string>;
 }
 
+/** The bank's own totals, printed at the end of the statement. */
+export interface StatementSummary {
+  opening: number;
+  debits: number;
+  credits: number;
+  closing: number;
+  debitCount: number | null;
+  creditCount: number | null;
+}
+
 export interface StatementSource {
   fileName: string;
   accountHolder: string | null;
+  /** First and last transaction dates. */
   from: string | null;
   to: string | null;
   rows: number;
+  /** The period printed on the statement ("Statement From … To …"), when present. */
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  summary?: StatementSummary | null;
 }
 
 export interface Dataset {

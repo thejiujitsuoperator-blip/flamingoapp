@@ -706,3 +706,115 @@ td .pill {
 .demo-banner {
   flex-wrap: wrap;
 }
+
+.plain-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.loading {
+  padding-block: 48px;
+  text-align: center;
+}
+.storage-note {
+  margin: 0 0 12px;
+}
+
+/* History */
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+.history-item,
+.change {
+  padding-block: 12px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.history-item:first-child,
+.change:first-child {
+  border-top: 0;
+}
+.history-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.history-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.history-actions {
+  gap: 14px;
+}
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 12px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+}
+.check {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+.check > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.check-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--neutral-bg);
+  color: var(--text-2);
+}
+.check.pass .check-icon {
+  background: var(--good-bg);
+  color: var(--good);
+}
+.check.warn .check-icon {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.check.fail .check-icon {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.check-items {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.comparison {
+  display: grid;
+  gap: 8px;
+}
+tr.row-changed td {
+  background: var(--warn-bg);
+}
+details summary {
+  cursor: pointer;
+}

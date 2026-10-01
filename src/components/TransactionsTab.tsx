@@ -8,11 +8,13 @@ interface Props {
   analysis: Analysis;
   settings: Settings;
   setSettings: (fn: (s: Settings) => Settings) => void;
+  /** Demo data, or a viewer who can't save: show types without letting them be changed. */
+  readOnly?: boolean;
 }
 
 const CHOICES: Category[] = ["membership", "dropin", "merch", "other", "refund", "interest", "investment", "owner"];
 
-export function TransactionsTab({ analysis, settings, setSettings }: Props) {
+export function TransactionsTab({ analysis, settings, setSettings, readOnly }: Props) {
   const [filter, setFilter] = useState<Category | "all" | "revenue">("all");
   const [search, setSearch] = useState("");
   const names = new Map(analysis.members.map((m) => [m.id, m.name]));
@@ -35,7 +37,7 @@ export function TransactionsTab({ analysis, settings, setSettings }: Props) {
     <section className="card">
       <p className="muted small">
         Every credit in your statements, with how it was classified. If something is wrong — say a membership fee that
-        was counted as merch — change its type here and the whole dashboard updates.
+        was counted as merch — change its type here and the whole dashboard updates. Every change is recorded in the History tab.
       </p>
       <div className="filters">
         <input type="search" placeholder="Search payer or note" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -75,6 +77,7 @@ export function TransactionsTab({ analysis, settings, setSettings }: Props) {
                     value={p.category}
                     onChange={(e) => setCategory(p.txnId, e.target.value as Category)}
                     aria-label="Transaction type"
+                    disabled={readOnly}
                   >
                     {CHOICES.map((c) => (
                       <option key={c} value={c}>
@@ -82,7 +85,7 @@ export function TransactionsTab({ analysis, settings, setSettings }: Props) {
                       </option>
                     ))}
                   </select>
-                  {settings.categoryOverrides[p.txnId] && (
+                  {settings.categoryOverrides[p.txnId] && !readOnly && (
                     <button className="link small" onClick={() => clearOverride(p.txnId)}>
                       reset
                     </button>

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { formatDate } from "../lib/dates";
 import { normaliseName } from "../lib/classify";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { ConfirmButton } from "./ConfirmButton";
@@ -9,17 +8,17 @@ interface Props {
   settings: Settings;
   setSettings: (fn: (s: Settings) => Settings) => void;
   data: Dataset;
-  onClear: () => void;
+  readOnly?: boolean;
 }
 
-export function SettingsTab({ settings, setSettings, data, onClear }: Props) {
+export function SettingsTab({ settings, setSettings, data, readOnly }: Props) {
   const [owner, setOwner] = useState("");
   const update = (patch: Partial<Settings>) => setSettings((s) => ({ ...s, ...patch }));
   const setTier = (i: number, patch: Partial<PlanTier>) =>
     update({ planTiers: settings.planTiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
 
   return (
-    <div className="settings">
+    <fieldset className="settings plain-fieldset" disabled={readOnly}>
       <section className="card">
         <h2>Membership plans</h2>
         <p className="muted small">
@@ -107,24 +106,27 @@ export function SettingsTab({ settings, setSettings, data, onClear }: Props) {
       </section>
 
       <section className="card">
-        <h2>Loaded statements</h2>
-        <ul className="plain">
-          {data.sources.map((s, i) => (
-            <li key={i}>
-              <strong>{s.fileName}</strong> — {formatDate(s.from)} to {formatDate(s.to)}, {s.rows} transactions
-            </li>
-          ))}
-        </ul>
+        <h2>Defaults</h2>
         <p className="muted small">
-          {data.txns.length} transactions stored in this browser only. Nothing is uploaded anywhere unless a question or
-          screenshot is sent to Claude, which then sees a summary of members and payments.
+          Put the plans and rules above back to their defaults. Reclassified payments, renamed members and owner transfers
+          are kept. Uploaded statements and every earlier change stay in the History tab.
         </p>
         <div className="row">
-          <button onClick={() => setSettings(() => ({ ...DEFAULT_SETTINGS }))}>Reset settings</button>
-          <ConfirmButton label="Clear all data" confirmLabel="Click again to clear all statement data" onConfirm={onClear} />
+          <ConfirmButton
+            label="Reset plans and rules"
+            confirmLabel="Click again to reset plans and rules"
+            onConfirm={() =>
+              setSettings((s) => ({
+                ...DEFAULT_SETTINGS,
+                categoryOverrides: s.categoryOverrides,
+                memberNames: s.memberNames,
+                ownerPayers: s.ownerPayers,
+              }))
+            }
+          />
         </div>
       </section>
-    </div>
+    </fieldset>
   );
 }
 

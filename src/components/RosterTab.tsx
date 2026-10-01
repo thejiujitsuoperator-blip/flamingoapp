@@ -12,7 +12,13 @@ import { StatusPill } from "./StatusPill";
 interface Props {
   matches: RosterMatch[];
   analysis: Analysis;
-  setRoster: (fn: (r: RosterEntry[]) => RosterEntry[]) => void;
+  /** The current member list. */
+  roster: RosterEntry[];
+  /** Saves a new version of the whole list. */
+  onSaveVersion: (entries: RosterEntry[], note: string) => Promise<void>;
+  /** Records a manual match (undefined = automatic, null = not in statements). */
+  onLink: (entry: RosterEntry, memberId: string | null | undefined, describe: string) => Promise<void>;
+  canWrite: boolean;
   onOpenMember: (id: string) => void;
 }
 
@@ -29,7 +35,7 @@ const NONE = "__none";
 
 const isProspect = (m: RosterMatch) => (m.entry.tags ?? []).some((t) => t === "Trial" || t === "Enquiry");
 
-export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props) {
+export function RosterTab({ matches, analysis, roster, onSaveVersion, onLink, canWrite, onOpenMember }: Props) {
   const [text, setText] = useState("");
   const [scanStatus, setScanStatus] = useState<{ kind: "busy" | "ok" | "error"; text: string } | null>(null);
   const [ai, setAi] = useState<AiBackend | null>(null);
@@ -63,20 +69,32 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
     }
   }
 
-  function addFromText() {
-    const entries = parseRosterText(text, "Pasted / scanned");
-    let added = 0;
-    setRoster((r) => {
-      const merged = mergeRoster(r, entries);
-      added = merged.added;
-      return merged.roster;
-    });
-    setText("");
-    setScanStatus({ kind: "ok", text: `Added ${added} name${added === 1 ? "" : "s"} (${entries.length - added} already on the list).` });
+  async function save(action: () => Promise<void>, done?: string) {
+    try {
+      await action();
+      if (done) setScanStatus({ kind: "ok", text: done });
+    } catch (err) {
+      setScanStatus({ kind: "error", text: (err as Error).message });
+    }
   }
 
-  const updateEntry = (id: string, patch: Partial<RosterEntry>) =>
-    setRoster((r) => r.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  function addFromText() {
+    const entries = parseRosterText(text, "Pasted / scanned");
+    const merged = mergeRoster(roster, entries);
+    setText("");
+    void save(
+      () => onSaveVersion(merged.roster, `Added ${merged.added} name${merged.added === 1 ? "" : "s"}`),
+      `Added ${merged.added} name${merged.added === 1 ? "" : "s"} (${entries.length - merged.added} already on the list). Saved as a new version of the list.`,
+    );
+  }
+
+  const memberName = (id: string | null | undefined) => analysis.members.find((x) => x.id === id)?.name ?? "a payer";
+  const describeLink = (entry: RosterEntry, value: string | null | undefined) =>
+    value === undefined
+      ? `"${entry.label ?? entry.name}" set back to automatic matching.`
+      : value === null
+        ? `"${entry.label ?? entry.name}" marked as not in the bank statements.`
+        : `"${entry.label ?? entry.name}" matched to ${memberName(value)}.`;
 
   const listed = new Set(matches.filter((m) => m.member && !m.paidBy).map((m) => m.member!.id));
   const notListed = analysis.members.filter((m) => !listed.has(m.id) && m.status !== "lapsed");
@@ -109,7 +127,7 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
           line, with a phone number if you have it. Names are matched against who paid in your bank statements.
         </p>
         <div className="row">
-          <button className="primary" onClick={() => shotInput.current?.click()} disabled={!ai || scanStatus?.kind === "busy"}>
+          <button className="primary" onClick={() => shotInput.current?.click()} disabled={!ai || !canWrite || scanStatus?.kind === "busy"}>
             Scan screenshots
           </button>
           <input ref={shotInput} type="file" accept="image/*" multiple hidden onChange={(e) => scan(e.target.files)} />
@@ -124,14 +142,14 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
           aria-label="Names to add"
         />
         <div className="row">
-          <button onClick={addFromText} disabled={!text.trim()}>
+          <button onClick={addFromText} disabled={!text.trim() || !canWrite}>
             Add to list
           </button>
           {matches.length > 0 && (
             <ConfirmButton
               label="Clear list"
               confirmLabel={`Click again to remove all ${matches.length} names`}
-              onConfirm={() => setRoster(() => [])}
+              onConfirm={() => void save(() => onSaveVersion([], "Cleared the list"), "List cleared. The earlier version stays in History.")}
             />
           )}
         </div>
@@ -205,11 +223,11 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
                         <select
                           value={value}
                           aria-label={`Payer for ${m.entry.name}`}
-                          onChange={(e) =>
-                            updateEntry(m.entry.id, {
-                              linkedMemberId: e.target.value === AUTO ? undefined : e.target.value === NONE ? null : e.target.value,
-                            })
-                          }
+                          disabled={!canWrite}
+                          onChange={(e) => {
+                            const v = e.target.value === AUTO ? undefined : e.target.value === NONE ? null : e.target.value;
+                            void save(() => onLink(m.entry, v, describeLink(m.entry, v)));
+                          }}
                         >
                           <option value={AUTO}>
                             {m.entry.linkedMemberId === undefined && m.member ? `Auto: ${m.member.name}` : "Auto"}
@@ -238,7 +256,13 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
                       <td>{m.member ? formatDate(m.member.expiry) : "—"}</td>
                       <td className="num">{m.member ? money(m.member.totalPaid) : "—"}</td>
                       <td>
-                        <button className="link small" onClick={() => setRoster((r) => r.filter((e) => e.id !== m.entry.id))}>
+                        <button
+                          className="link small"
+                          disabled={!canWrite}
+                          onClick={() =>
+                            void save(() => onSaveVersion(roster.filter((e) => e.id !== m.entry.id), `Removed "${m.entry.label ?? m.entry.name}"`))
+                          }
+                        >
                           remove
                         </button>
                       </td>
@@ -266,9 +290,14 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
                 </span>{" "}
                 <button
                   className="link small"
-                  onClick={() =>
-                    setRoster((r) => [...r, { id: rosterId(m.name, null), name: m.name, phone: null, source: "Added from statements", linkedMemberId: m.id }])
-                  }
+                  disabled={!canWrite}
+                  onClick={() => {
+                    const entry: RosterEntry = { id: rosterId(m.name, null), name: m.name, phone: null, source: "Added from statements" };
+                    void save(async () => {
+                      await onSaveVersion([...roster, entry], `Added "${m.name}" from the statements`);
+                      await onLink(entry, m.id, describeLink(entry, m.id));
+                    });
+                  }}
                 >
                   add to list
                 </button>

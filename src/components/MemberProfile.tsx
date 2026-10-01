@@ -8,7 +8,8 @@ interface Props {
   member: Member;
   asOf: string;
   onClose: () => void;
-  onRename: (name: string) => void;
+  /** Absent when renaming isn't allowed (demo data, or a viewer who can't save). */
+  onRename?: (name: string) => void;
 }
 
 export function MemberProfile({ member, asOf, onClose, onRename }: Props) {
@@ -40,7 +41,7 @@ export function MemberProfile({ member, asOf, onClose, onRename }: Props) {
               className="row"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (name.trim()) onRename(name.trim());
+                if (name.trim()) onRename?.(name.trim());
                 setEditing(false);
               }}
             >
@@ -52,9 +53,11 @@ export function MemberProfile({ member, asOf, onClose, onRename }: Props) {
           ) : (
             <div>
               <h2>{member.name}</h2>
-              <button className="link small" onClick={() => setEditing(true)}>
-                Rename
-              </button>
+              {onRename && (
+                <button className="link small" onClick={() => setEditing(true)}>
+                  Rename
+                </button>
+              )}
             </div>
           )}
           <button className="ghost close" onClick={onClose} aria-label="Close">

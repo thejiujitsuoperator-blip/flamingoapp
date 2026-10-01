@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import type { StatementSource, Txn } from "./types";
+import type { StatementSource, StatementSummary, Txn } from "./types";
 
 type Cell = string | number | boolean | null | undefined;
 
@@ -73,7 +73,10 @@ export function parseStatement(data: ArrayBuffer, fileName: string): ParsedState
 
   const txns: Txn[] = [];
   const seen = new Map<string, number>();
-  for (const row of rows.slice(cols.headerRow + 1)) {
+  const body = rows.slice(cols.headerRow + 1);
+  // The transaction table ends where the bank's summary block starts.
+  const summaryAt = body.findIndex((row) => /statement summary|opening balance/i.test(String(row[0] ?? "")));
+  for (const row of summaryAt >= 0 ? body.slice(0, summaryAt) : body) {
     const date = toIsoDate(row[cols.date]);
     if (!date) continue;
     const narration = String(row[cols.narration] ?? "").replace(/\s+/g, " ").trim();
@@ -93,10 +96,65 @@ export function parseStatement(data: ArrayBuffer, fileName: string): ParsedState
   if (!txns.length) throw new Error("No transactions found in this file.");
 
   const dates = txns.map((t) => t.date).sort();
+  const period = findPeriod(rows.slice(0, cols.headerRow));
   return {
     txns,
-    source: { fileName, accountHolder, from: dates[0], to: dates[dates.length - 1], rows: txns.length },
+    source: {
+      fileName,
+      accountHolder,
+      from: dates[0],
+      to: dates[dates.length - 1],
+      rows: txns.length,
+      periodFrom: period?.from ?? null,
+      periodTo: period?.to ?? null,
+      summary: summaryAt >= 0 ? findSummary(body.slice(summaryAt)) : null,
+    },
   };
+}
+
+/** "Statement From : 01/04/2025 To : 01/03/2026" in the header block. */
+function findPeriod(header: Cell[][]): { from: string; to: string } | null {
+  for (const row of header) {
+    for (const cell of row) {
+      const m = String(cell ?? "").match(/From\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s+To\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (m) {
+        const from = toIsoDate(m[1]);
+        const to = toIsoDate(m[2]);
+        if (from && to) return { from, to };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The STATEMENT SUMMARY block: a label row ("Opening Balance … Debits, Credits, Closing Bal")
+ * with the values on the next row, and optionally "Dr Count / Cr Count" the same way.
+ */
+function findSummary(rows: Cell[][]): StatementSummary | null {
+  const valueBelow = (r: number, label: RegExp): number | null => {
+    const col = rows[r].findIndex((c) => label.test(String(c ?? "").trim()));
+    if (col < 0 || r + 1 >= rows.length) return null;
+    const v = rows[r + 1][col];
+    return v === "" || v == null || !Number.isFinite(toNumber(v)) ? null : toNumber(v);
+  };
+  let summary: StatementSummary | null = null;
+  for (let r = 0; r < rows.length; r++) {
+    const opening = valueBelow(r, /^opening balance$/i);
+    const debits = valueBelow(r, /^debits$/i);
+    const credits = valueBelow(r, /^credits$/i);
+    const closing = valueBelow(r, /^closing bal(ance)?$/i);
+    if (opening !== null && debits !== null && credits !== null && closing !== null) {
+      summary = { opening, debits, credits, closing, debitCount: null, creditCount: null };
+    }
+    const dr = valueBelow(r, /^dr count$/i);
+    const cr = valueBelow(r, /^cr count$/i);
+    if (summary && dr !== null && cr !== null) {
+      summary.debitCount = dr;
+      summary.creditCount = cr;
+    }
+  }
+  return summary;
 }
 
 /** Merges newly parsed transactions into an existing list, dropping duplicates. */
