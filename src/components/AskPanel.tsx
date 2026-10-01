@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { aiBackend, askClaude, type AiBackend } from "../lib/ai";
 import { buildAiContext } from "../lib/aiContext";
 import type { Analysis } from "../lib/members";
 import { EXAMPLE_QUESTIONS, localQuery, type QueryResult } from "../lib/query";
@@ -13,62 +14,40 @@ interface Props {
   onOpenMember: (id: string) => void;
 }
 
-async function askClaude(question: string, analysis: Analysis, settings: Settings, roster: RosterMatch[]): Promise<QueryResult> {
-  const res = await fetch("/api/ask", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, context: buildAiContext(analysis, settings, roster) }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
-  return { ...body, engine: "claude" };
-}
-
 export function AskPanel({ analysis, settings, roster, onOpenMember }: Props) {
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [aiAvailable, setAiAvailable] = useState(false);
-  const [useAi, setUseAi] = useState(true);
+  const [ai, setAi] = useState<AiBackend | null>(null);
+  const [alwaysClaude, setAlwaysClaude] = useState(false);
 
   useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((h) => setAiAvailable(Boolean(h.ai)))
-      .catch(() => setAiAvailable(false));
+    aiBackend().then(setAi);
   }, []);
 
   async function run(q: string) {
     if (!q.trim()) return;
     setQuestion(q);
-    setBusy(true);
     setError(null);
-    try {
-      if (aiAvailable && useAi) {
-        try {
-          setResult(await askClaude(q, analysis, settings, roster));
-          return;
-        } catch (err) {
-          const local = localQuery(q, analysis, settings.renewSoonDays, roster);
-          if (!local) throw err;
-          setResult(local);
-          setError(`Claude couldn't answer (${(err as Error).message}); showing the built-in answer instead.`);
-          return;
-        }
-      }
-      const local = localQuery(q, analysis, settings.renewSoonDays, roster);
-      if (local) setResult(local);
-      else {
-        setResult(null);
-        setError(
-          `I didn't understand that. Try asking about revenue, renewals, active members, a member's name, or payments in a month.${
-            aiAvailable ? "" : " (Set ANTHROPIC_API_KEY on the server to answer free-form questions with Claude.)"
-          }`,
-        );
-      }
-    } catch (err) {
+    // The built-in parser answers common questions instantly; Claude takes the rest.
+    const local = alwaysClaude && ai ? null : localQuery(q, analysis, settings.renewSoonDays, roster);
+    if (local) {
+      setResult(local);
+      return;
+    }
+    if (!ai) {
       setResult(null);
+      setError(
+        "I didn't understand that. Try asking about revenue, renewals, active members, your member list, a member's name, or payments in a month.",
+      );
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      setResult(await askClaude(ai, q, buildAiContext(analysis, settings, roster)));
+    } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
@@ -105,14 +84,15 @@ export function AskPanel({ analysis, settings, roster, onOpenMember }: Props) {
             </button>
           ))}
         </div>
-        {aiAvailable && (
+        {ai && (
           <label className="toggle small">
-            <input type="checkbox" checked={useAi} onChange={(e) => setUseAi(e.target.checked)} />
-            Answer with Claude
+            <input id="always-claude" type="checkbox" checked={alwaysClaude} onChange={(e) => setAlwaysClaude(e.target.checked)} />
+            Always ask Claude
           </label>
         )}
       </div>
 
+      {busy && <p className="muted">Asking Claude… this can take up to a minute.</p>}
       {error && <p className="ask-error">{error}</p>}
       {result && (
         <div className="ask-result">

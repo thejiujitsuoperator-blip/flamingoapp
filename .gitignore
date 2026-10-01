@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-artifact
 *.tsbuildinfo
 .env
 # Never commit real bank statements

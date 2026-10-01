@@ -1,9 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { EXTRACT_INSTRUCTIONS } from "../src/lib/prompts";
 import { claude, MODEL, parseJsonResponse, toClaudeError } from "./claude";
-
-const SYSTEM = `You read screenshots of a martial-arts gym's member list — for example a WhatsApp group's participant list, a contacts list, a spreadsheet or a membership app — and transcribe the people in it.
-
-Return every person visible, in on-screen order, with their name exactly as shown (keep the spelling; drop emoji and decorations) and their phone number if one is shown. Skip anything that isn't a member: the group or app name, headings, buttons, timestamps, message text, "You", and admin or status labels. If an entry shows only a phone number with no name, include it with name set to the number. Do not guess text you can't read; leave out entries that are cut off.`;
 
 const SCHEMA = {
   type: "object",
@@ -49,7 +46,7 @@ export async function extractNames(images: { data: string; mediaType: ImageType 
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
-      system: SYSTEM,
+      system: EXTRACT_INSTRUCTIONS,
       messages: [{ role: "user", content }],
     });
   } catch (err) {

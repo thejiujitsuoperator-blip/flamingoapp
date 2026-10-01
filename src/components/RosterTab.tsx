@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { aiBackend, extractNames, type AiBackend } from "../lib/ai";
 import { formatDate } from "../lib/dates";
 import { money } from "../lib/format";
 import { CATEGORY_LABELS } from "../lib/types";
 import type { Analysis } from "../lib/members";
 import { mergeRoster, parseRosterText, rosterId, type MatchConfidence, type RosterMatch } from "../lib/roster";
 import type { RosterEntry } from "../lib/types";
+import { ConfirmButton } from "./ConfirmButton";
 import { StatusPill } from "./StatusPill";
 
 interface Props {
@@ -27,52 +29,28 @@ const NONE = "__none";
 
 const isProspect = (m: RosterMatch) => (m.entry.tags ?? []).some((t) => t === "Trial" || t === "Enquiry");
 
-/** Shrinks a screenshot so its long edge is at most 1600px (the model downsizes larger images anyway). */
-async function toBase64Png(file: File): Promise<{ data: string; mediaType: "image/png" }> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const url = canvas.toDataURL("image/png");
-  return { data: url.slice(url.indexOf(",") + 1), mediaType: "image/png" };
-}
-
 export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props) {
   const [text, setText] = useState("");
   const [scanStatus, setScanStatus] = useState<{ kind: "busy" | "ok" | "error"; text: string } | null>(null);
-  const [aiAvailable, setAiAvailable] = useState(false);
+  const [ai, setAi] = useState<AiBackend | null>(null);
   const [filter, setFilter] = useState<"all" | "unmatched" | "check" | "inactive" | "prospects">("all");
   const shotInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((h) => setAiAvailable(Boolean(h.ai)))
-      .catch(() => setAiAvailable(false));
+    aiBackend().then(setAi);
   }, []);
 
   async function scan(files: FileList | null) {
     if (!files?.length) return;
     const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (!list.length) return;
+    if (!ai) return;
     const lines: string[] = [];
     try {
-      for (let i = 0; i < list.length; i += 3) {
-        const batch = list.slice(i, i + 3);
-        setScanStatus({ kind: "busy", text: `Reading screenshot ${i + 1}–${i + batch.length} of ${list.length}…` });
-        const res = await fetch("/api/extract-names", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ images: await Promise.all(batch.map(toBase64Png)) }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
-        for (const p of body.people as { name: string; phone: string | null }[]) {
-          lines.push(p.phone ? `${p.name}  ${p.phone}` : p.name);
-        }
-      }
+      const people = await extractNames(ai, list, (done, total) =>
+        setScanStatus({ kind: "busy", text: `Reading screenshots (${done} of ${total} done)… this can take a minute.` }),
+      );
+      for (const p of people) lines.push(p.phone ? `${p.name}  ${p.phone}` : p.name);
       setText((t) => [t.trim(), ...lines].filter(Boolean).join("\n"));
       setScanStatus({
         kind: "ok",
@@ -131,20 +109,18 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
           line, with a phone number if you have it. Names are matched against who paid in your bank statements.
         </p>
         <div className="row">
-          <button className="primary" onClick={() => shotInput.current?.click()} disabled={!aiAvailable || scanStatus?.kind === "busy"}>
+          <button className="primary" onClick={() => shotInput.current?.click()} disabled={!ai || scanStatus?.kind === "busy"}>
             Scan screenshots
           </button>
           <input ref={shotInput} type="file" accept="image/*" multiple hidden onChange={(e) => scan(e.target.files)} />
-          {!aiAvailable && (
-            <span className="muted small">Scanning needs ANTHROPIC_API_KEY on the server. Pasting names works without it.</span>
-          )}
+          {!ai && <span className="muted small">Screenshot scanning needs Claude, which isn't available here. Pasting names works.</span>}
         </div>
         {scanStatus && <p className={scanStatus.kind === "error" ? "ask-error" : "muted small"}>{scanStatus.text}</p>}
         <textarea
           rows={6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={"Meera Venkatesh\nRohan Desai  +91 98000 00002\nTara Menon"}
+          placeholder={"Meera Venkatesh\nRohan Desai  +91 98000 00002\nTara Menon Friend"}
           aria-label="Names to add"
         />
         <div className="row">
@@ -152,14 +128,11 @@ export function RosterTab({ matches, analysis, setRoster, onOpenMember }: Props)
             Add to list
           </button>
           {matches.length > 0 && (
-            <button
-              className="danger"
-              onClick={() => {
-                if (confirm(`Remove all ${matches.length} names from the member list?`)) setRoster(() => []);
-              }}
-            >
-              Clear list
-            </button>
+            <ConfirmButton
+              label="Clear list"
+              confirmLabel={`Click again to remove all ${matches.length} names`}
+              onConfirm={() => setRoster(() => [])}
+            />
           )}
         </div>
       </section>

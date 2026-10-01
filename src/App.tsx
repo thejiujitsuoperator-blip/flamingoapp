@@ -6,6 +6,7 @@ import { RosterTab } from "./components/RosterTab";
 import { Overview } from "./components/Overview";
 import { SettingsTab } from "./components/SettingsTab";
 import { TransactionsTab } from "./components/TransactionsTab";
+import logo from "./assets/logo.svg";
 import { formatDate, todayIso } from "./lib/dates";
 import { demoDataset } from "./lib/demo";
 import { analyse } from "./lib/members";
@@ -25,7 +26,11 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function App() {
-  const [data, setData] = useState<Dataset>(loadDataset);
+  // First visit: open on made-up demo data so the dashboard shows what it does.
+  const [data, setData] = useState<Dataset>(() => {
+    const stored = loadDataset();
+    return stored.txns.length || stored.sources.length ? stored : demoDataset();
+  });
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [roster, setRoster] = useState<RosterEntry[]>(loadRoster);
   const [tab, setTab] = useState<Tab>("overview");
@@ -87,6 +92,7 @@ export default function App() {
   }
 
   const hasData = data.txns.length > 0;
+  const isDemo = data.sources.some((src) => src.fileName === "Demo data");
 
   return (
     <div
@@ -99,7 +105,7 @@ export default function App() {
     >
       <header className="topbar">
         <div className="brand">
-          <img src="/favicon.svg" alt="" width={28} height={28} />
+          <img src={logo} alt="" width={28} height={28} />
           <div>
             <h1>Flamingo Members</h1>
             {hasData && (
@@ -143,6 +149,18 @@ export default function App() {
           <span>{notice.text}</span>
           <button className="ghost" onClick={() => setNotice(null)} aria-label="Dismiss">
             ×
+          </button>
+        </div>
+      )}
+
+      {isDemo && (
+        <div className="notice warn demo-banner">
+          <span>
+            <strong>Demo data.</strong> These members and payments are made up. Upload your bank statement to see your
+            gym's numbers; the demo data is replaced.
+          </span>
+          <button className="primary" onClick={() => fileInput.current?.click()}>
+            Upload statement
           </button>
         </div>
       )}

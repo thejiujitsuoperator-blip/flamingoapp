@@ -24,13 +24,23 @@ npm run build
 npm start            # serves the built app and API on http://localhost:8787
 ```
 
+### As a claude.ai artifact
+
+`npm run build:artifact` writes the whole app as one self-contained page, `dist-artifact/flamingo-members.html`,
+for publishing as a private claude.ai artifact. There, questions the built-in parser can't answer and screenshot
+scanning go to Claude through the viewer's own claude.ai account (the artifact `sample` capability), so no server
+or API key is needed.
+
+### Claude answers when self-hosted
+
 To answer free-form questions with Claude, set `ANTHROPIC_API_KEY` in the server's environment (see `.env.example`).
 Without it, questions are answered by a built-in parser that understands renewals, revenue by month or date range,
 active/due/lapsed/new members, top payers, a member's name, and amount filters.
 
 ## How the data is interpreted
 
-Statements are parsed in the browser and stored only in that browser's `localStorage`. Upload more statements any
+Statements are parsed in the browser and stored only in that browser's `localStorage`, so they don't follow you to
+another browser or device. Upload more statements any
 time; overlapping transactions are de-duplicated. If you use Claude answers, a summary of members and payments is
 sent to the server with the question.
 

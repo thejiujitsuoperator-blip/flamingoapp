@@ -26,7 +26,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #141413;
     --surface: #1f1f1d;
@@ -47,6 +47,27 @@
     --neutral-bg: #2a2a27;
     --shadow: none;
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #141413;
+  --surface: #1f1f1d;
+  --surface-2: #2a2a27;
+  --border: #34332f;
+  --text: #ffffff;
+  --text-2: #c3c2b7;
+  --muted: #a3a29a;
+  --accent: #e8739e;
+  --accent-ink: #1a0a10;
+  --link: #86b6ef;
+  --good: #6fd49b;
+  --good-bg: #16301f;
+  --warn: #f0c060;
+  --warn-bg: #3a2c0c;
+  --bad: #f2948d;
+  --bad-bg: #3d1b18;
+  --neutral-bg: #2a2a27;
+  --shadow: none;
 }
 
 * {
@@ -680,4 +701,8 @@ td .pill {
   background: var(--surface-2);
   color: var(--text-2);
   white-space: nowrap;
+}
+
+.demo-banner {
+  flex-wrap: wrap;
 }

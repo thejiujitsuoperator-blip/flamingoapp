@@ -2,6 +2,7 @@ import { useState } from "react";
 import { formatDate } from "../lib/dates";
 import { normaliseName } from "../lib/classify";
 import { DEFAULT_SETTINGS } from "../lib/settings";
+import { ConfirmButton } from "./ConfirmButton";
 import type { Dataset, PlanTier, Settings } from "../lib/types";
 
 interface Props {
@@ -115,19 +116,12 @@ export function SettingsTab({ settings, setSettings, data, onClear }: Props) {
           ))}
         </ul>
         <p className="muted small">
-          {data.txns.length} transactions stored in this browser only. Nothing is uploaded to a server unless you ask a
-          question with Claude, which sends a summary of members and payments.
+          {data.txns.length} transactions stored in this browser only. Nothing is uploaded anywhere unless a question or
+          screenshot is sent to Claude, which then sees a summary of members and payments.
         </p>
         <div className="row">
           <button onClick={() => setSettings(() => ({ ...DEFAULT_SETTINGS }))}>Reset settings</button>
-          <button
-            className="danger"
-            onClick={() => {
-              if (confirm("Remove all statement data from this browser?")) onClear();
-            }}
-          >
-            Clear all data
-          </button>
+          <ConfirmButton label="Clear all data" confirmLabel="Click again to clear all statement data" onConfirm={onClear} />
         </div>
       </section>
     </div>

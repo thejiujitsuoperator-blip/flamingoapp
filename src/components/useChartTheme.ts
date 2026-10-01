@@ -15,15 +15,26 @@ const DARK = {
   text: "#ffffff",
 };
 
+/** An explicit data-theme on <html> wins; otherwise follow the OS setting. */
+function isDark(): boolean {
+  const explicit = document.documentElement.dataset.theme;
+  if (explicit) return explicit === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
 /** Chart colours for the current colour scheme (SVG attributes can't read CSS variables). */
 export function useChartTheme() {
-  const query = typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  const [dark, setDark] = useState(query?.matches ?? false);
+  const [dark, setDark] = useState(isDark);
   useEffect(() => {
-    if (!query) return;
-    const onChange = (e: MediaQueryListEvent) => setDark(e.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, [query]);
+    const update = () => setDark(isDark());
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    query.addEventListener("change", update);
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      query.removeEventListener("change", update);
+      observer.disconnect();
+    };
+  }, []);
   return dark ? DARK : LIGHT;
 }
