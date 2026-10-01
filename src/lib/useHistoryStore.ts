@@ -15,7 +15,7 @@ import {
   type RosterVersion,
 } from "./audit";
 import { formatDate } from "./dates";
-import { backupImport, backupRosterVersion } from "./drive";
+import { backupImport, backupRosterVersion, backupSnapshot, snapshotJson, snapshotTitle } from "./drive";
 import { analyse, monthly } from "./members";
 import type { Dataset, RosterEntry, Settings } from "./types";
 import { currentRoster, openVault, readLegacyData, type LegacyData, type OriginalFile, type Vault, type VaultState } from "./vault";
@@ -278,7 +278,49 @@ export function useHistoryStore() {
     setLegacy(null);
   }, [vault, legacy, saveRosterVersion, logChange]);
 
+  /**
+   * The Back up button: sends any upload or list version not yet in Drive, then one full snapshot
+   * of the history. If Drive can't be reached, offers the snapshot as a file to save instead.
+   */
+  const backupAll = useCallback(async (): Promise<{ ok: boolean; message: string }> => {
+    const s = stateRef.current;
+    if (!vault || !s) return { ok: false, message: "Still loading your history." };
+    const pendingImports = s.imports.filter((i) => i.backup?.state !== "done");
+    const pendingVersions = s.rosterVersions.filter((v) => v.backup?.state !== "done");
+    for (const r of pendingImports) await runImportBackup(r, await vault.readOriginal(r).catch(() => null));
+    for (const v of pendingVersions) await runRosterBackup(v);
+    const json = snapshotJson(stateRef.current ?? s);
+    const result =
+      vault.kind === "cloud"
+        ? await backupSnapshot(json, { folderId: stateRef.current?.config.driveFolderId ?? null, rememberFolder })
+        : { state: "failed" as const, detail: "Google Drive is only reachable from the page on claude.ai." };
+    const after = stateRef.current ?? s;
+    const stillPending =
+      after.imports.filter((i) => i.backup?.state !== "done").length +
+      after.rosterVersions.filter((v) => v.backup?.state !== "done").length;
+    if (result.state === "done") {
+      const caught = pendingImports.length + pendingVersions.length - stillPending;
+      return {
+        ok: stillPending === 0,
+        message: `Full backup saved to Google Drive${caught > 0 ? `, plus ${caught} earlier item${caught === 1 ? "" : "s"} that hadn't been backed up` : ""}.${stillPending ? ` ${stillPending} item${stillPending === 1 ? "" : "s"} still failed; see History.` : ""}`,
+      };
+    }
+    // Drive failed: hand the same snapshot to the viewer as a file.
+    const use = (window as unknown as { claude?: { use?: (n: string) => Promise<unknown> } }).claude?.use;
+    const downloads = use ? ((await use("downloads").catch(() => null)) as { save(r: { filename: string; data: string }): Promise<unknown> } | null) : null;
+    if (downloads) {
+      try {
+        await downloads.save({ filename: snapshotTitle(), data: json });
+        return { ok: false, message: `${result.detail} The full backup was saved to this device instead.` };
+      } catch {
+        return { ok: false, message: `${result.detail} Saving a copy to this device was cancelled.` };
+      }
+    }
+    return { ok: false, message: result.detail };
+  }, [vault, runImportBackup, runRosterBackup, rememberFolder]);
+
   return {
+    backupAll,
     vault,
     state,
     loadError,

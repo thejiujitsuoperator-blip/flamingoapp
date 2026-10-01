@@ -169,7 +169,7 @@ export function HistoryTab({ state, vault, nowMonths, onRetryImportBackup, onRet
         <h2>Where this is kept</h2>
         <p className="small">
           {vault.kind === "cloud"
-            ? "Every statement, member-list version and change is saved with this page on claude.ai, so it's the same on any device you sign in on. Nothing here is ever overwritten: each upload is added alongside the earlier ones, and each is copied to a \"Flamingo Members backups\" folder in your Google Drive."
+            ? "Every statement, member-list version and change is saved with this page on claude.ai, so it's the same on any device you sign in on. Nothing here is ever overwritten: each upload is added alongside the earlier ones, and each is copied to a \"Flamingo Members backups\" folder in your Google Drive. The Back up button at the top sends anything not yet copied, plus one file holding the whole history."
             : "Saved in this browser only. Open the page on claude.ai to keep the history across devices and back it up to Google Drive."}
         </p>
       </section>

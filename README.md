@@ -61,8 +61,10 @@ Nothing is ever overwritten. Each statement upload, each version of the member l
 
 Where it's kept: on the published claude.ai page, in the page's own storage (owner writes, anyone it's shared with
 can read), with each upload and member-list version also copied to a "Flamingo Members backups" folder in Google
-Drive through the owner's claude.ai Google Drive connector. Run locally, the same history is kept in the browser's
-`localStorage` (without the original files or Drive backups).
+Drive through the owner's claude.ai Google Drive connector. The **Back up** button at the top of the page sends anything not
+yet copied, plus one JSON file holding the whole history; if Drive can't be reached, that file is offered as a
+download instead. Run locally, the same history is kept in the browser's `localStorage` (without the original
+files or Drive backups).
 
 ## How the data is interpreted
 

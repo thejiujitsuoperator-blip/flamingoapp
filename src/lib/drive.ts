@@ -136,3 +136,43 @@ export async function backupRosterVersion(version: RosterVersion, ctx: DriveCont
     return { state: "failed", at, detail: explain(err) };
   }
 }
+
+/** One JSON file holding the whole history: every import with its rows, list versions, change log, settings. */
+export function snapshotJson(state: { imports: ImportRecord[]; rows: Record<string, Txn[]>; rosterVersions: RosterVersion[]; changes: unknown[]; config: unknown }): string {
+  return JSON.stringify(
+    {
+      takenAt: new Date().toISOString(),
+      imports: state.imports.map((record) => ({ record, rows: state.rows[record.id] ?? [] })),
+      rosterVersions: state.rosterVersions,
+      changes: state.changes,
+      config: state.config,
+    },
+    null,
+    2,
+  );
+}
+
+export function snapshotTitle(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}${pad(now.getMinutes())} full backup.json`;
+}
+
+export async function backupSnapshot(json: string, ctx: DriveContext): Promise<BackupStatus> {
+  const at = new Date().toISOString();
+  const mcp = await driveAvailable();
+  if (!mcp) return { state: "failed", at, detail: "Google Drive can only be reached from the page on claude.ai." };
+  try {
+    const folder = await ensureFolder(mcp, ctx.folderId, ctx.rememberFolder);
+    await createFile(mcp, {
+      title: snapshotTitle(),
+      textContent: json,
+      contentMimeType: "application/json",
+      disableConversionToGoogleType: true,
+      ...(folder ? { parentId: folder } : {}),
+    });
+    return { state: "done", at, detail: `Saved to "${FOLDER_TITLE}" in Google Drive.` };
+  } catch (err) {
+    return { state: "failed", at, detail: explain(err) };
+  }
+}

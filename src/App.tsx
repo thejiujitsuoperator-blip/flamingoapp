@@ -37,6 +37,7 @@ export default function App() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "warn" | "error"; text: string; toHistory?: boolean } | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const demo = useMemo(() => demoDataset(), []);
@@ -153,6 +154,22 @@ export default function App() {
                 <input type="date" value={customDate} onChange={(e) => e.target.value && setCustomDate(e.target.value)} />
               )}
             </label>
+          )}
+          {vault.canWrite && vault.kind === "cloud" && !isDemo && (
+            <button
+              onClick={async () => {
+                setBackingUp(true);
+                try {
+                  const r = await store.backupAll();
+                  setNotice({ kind: r.ok ? "ok" : "warn", text: r.message });
+                } finally {
+                  setBackingUp(false);
+                }
+              }}
+              disabled={backingUp || uploading}
+            >
+              {backingUp ? "Backing up…" : "Back up"}
+            </button>
           )}
           {vault.canWrite && (
             <button className="primary" onClick={() => fileInput.current?.click()} disabled={uploading}>
