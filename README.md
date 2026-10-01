@@ -108,6 +108,25 @@ A shared first name alone is not treated as a match, and a single-name entry ("A
 when several people on the list share that first name. Matched members are shown under their list name everywhere in
 the dashboard. Wrong or missing matches can be fixed from the dropdown on each row.
 
+### Importing a WhatsApp group
+
+**Import from a WhatsApp group** (on the **Member list** tab) lists everyone in a group with their phone numbers,
+from the group's chat export:
+
+1. In WhatsApp, open the group → *Export chat* → *Without media*, and pick the `.zip` (or the `.txt` inside it).
+   Android and iPhone exports, day-first and month-first dates, are all read.
+2. Optionally add your phone contacts as a `.vcf` (Google Contacts → Export → vCard, or iPhone Contacts → Lists →
+   *All Contacts* → Export). WhatsApp writes people saved in your phone by name only, so their numbers are filled in
+   from the contact with the same name; people who aren't saved appear in the export as their number, and get their
+   name from your contacts when you have one.
+
+Each person is shown as *in group*, *left* or *removed*, worked out from the group's "added", "joined", "left" and
+"removed" events, with their message count and when they were last seen. The list can be downloaded as a CSV or a
+`.vcf` to import into a phone, or added to the member list. Files are read in the browser and aren't uploaded.
+
+The export only covers the chat history kept on your phone, so members who joined before that and never posted
+won't appear. Event messages are recognised in English.
+
 ## Development
 
 ```bash

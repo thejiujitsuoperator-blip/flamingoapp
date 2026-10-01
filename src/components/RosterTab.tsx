@@ -8,6 +8,7 @@ import { mergeRoster, parseRosterText, rosterId, type MatchConfidence, type Rost
 import type { RosterEntry } from "../lib/types";
 import { ConfirmButton } from "./ConfirmButton";
 import { StatusPill } from "./StatusPill";
+import { WhatsAppImport } from "./WhatsAppImport";
 
 interface Props {
   matches: RosterMatch[];
@@ -154,6 +155,8 @@ export function RosterTab({ matches, analysis, roster, onSaveVersion, onLink, ca
           )}
         </div>
       </section>
+
+      <WhatsAppImport roster={roster} onSaveVersion={onSaveVersion} canWrite={canWrite} />
 
       {matches.length > 0 && (
         <section className="card">

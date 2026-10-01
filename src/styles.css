@@ -818,3 +818,17 @@ tr.row-changed td {
 details summary {
   cursor: pointer;
 }
+
+.warn-text {
+  color: var(--warn);
+}
+details > summary {
+  cursor: pointer;
+  color: var(--link);
+}
+details[open] > summary {
+  margin-bottom: 8px;
+}
+details .plain li + li {
+  margin-top: 6px;
+}
