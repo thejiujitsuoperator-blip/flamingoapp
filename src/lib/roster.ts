@@ -26,12 +26,41 @@ export function cleanPhone(raw: string | null | undefined): string | null {
 const letters = (s: string) => normaliseName(s).replace(/[^A-Z]/g, "");
 const tokens = (s: string) => normaliseName(s).split(" ").filter((t) => /[A-Z]/.test(t));
 
-function tokenMatches(a: string, b: string): boolean {
-  if (a === b) return true;
-  // Statement names are truncated ("VENKAT" for "VENKATESH"); allow prefixes of 4+ letters.
-  const [short, long] = a.length < b.length ? [a, b] : [b, a];
-  return short.length >= 4 && long.startsWith(short);
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const up = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = up;
+    }
+  }
+  return prev[b.length];
 }
+
+/** One-letter spelling differences in longer names ("YASHASHWI" / "YASHASWI"). */
+function nearSpelling(a: string, b: string): boolean {
+  const shorter = Math.min(a.length, b.length);
+  // Short names differ by one letter all the time ("SHAIMA" / "SHARMA"), so only longer ones count.
+  if (shorter < 7 || Math.abs(a.length - b.length) > 1) return false;
+  return editDistance(a, b) <= (shorter >= 9 ? 2 : 1);
+}
+
+/**
+ * Does a name on the list match a word of a bank name? `cutShort` is true only for the last word of a
+ * bank name that hit the 20-character limit ("SARASW" for "SARASWAT"); anywhere else a prefix is a
+ * different name ("PRIYA" is not "PRIYANSH").
+ */
+function sameToken(listWord: string, bankWord: string, cutShort = false): boolean {
+  if (listWord === bankWord) return true;
+  if (cutShort && bankWord.length >= 4 && listWord.startsWith(bankWord)) return true;
+  return nearSpelling(listWord, bankWord);
+}
+
+/** Bank names are cut at 20 characters; one at (or near) that length may end in a partial word. */
+const mayBeCutShort = (name: string) => normaliseName(name).length >= 18;
 
 /**
  * How strongly a roster person is named in a member's payment notes, e.g. a parent paying
@@ -44,13 +73,13 @@ function remarkScore(entry: RosterEntry, member: Member): number {
   for (const p of member.payments) {
     const remark = tokens(p.payer?.remark ?? "");
     if (!remark.length) continue;
-    const found = rt.filter((t) => t.length >= 3 && remark.some((r) => tokenMatches(t, r)));
-    if (!found.length || !tokenMatches(rt[0], remark.find((r) => tokenMatches(rt[0], r)) ?? "")) continue;
+    const found = rt.filter((t) => t.length >= 3 && remark.some((r) => sameToken(t, r)));
+    if (!found.length || !remark.some((r) => sameToken(rt[0], r))) continue;
     if (found.length === rt.length) best = Math.max(best, rt.length > 1 ? 90 : 70);
     else {
       // First name in the note and surname shared with the payer: likely family.
       const surname = rt[rt.length - 1];
-      const familySurname = tokens(member.name).some((t) => tokenMatches(surname, t));
+      const familySurname = tokens(member.name).some((t) => sameToken(surname, t));
       best = Math.max(best, familySurname ? 80 : 55);
     }
   }
@@ -80,18 +109,22 @@ function nameScore(entry: RosterEntry, member: Member): number {
     const rt = tokens(entry.name);
     const mt = tokens(name);
     if (!rt.length || !mt.length) continue;
-    const hit = (t: string, pool: string[]) =>
-      pool.some((p) => tokenMatches(t, p)) || (t.length >= 6 && letters(name).includes(t));
-    const rosterHits = rt.filter((t) => hit(t, mt)).length;
-    const memberHits = mt.filter((t) => t.length > 1 && (rt.some((r) => tokenMatches(t, r)) || (t.length >= 6 && a.includes(t)))).length;
+    const cut = mayBeCutShort(name);
+    const pair = (listWord: string, i: number) => sameToken(listWord, mt[i], cut && i === mt.length - 1);
+    const hit = (t: string) => mt.some((_, i) => pair(t, i)) || (t.length >= 6 && letters(name).includes(t));
+    const rosterHits = rt.filter(hit).length;
+    // A long bank word can be two names run together ("SARITAKUMARI" holds "SARITA").
+    const runTogether = (t: string) => t.length >= 8 && rt.some((r) => r.length >= 5 && t.includes(r));
+    const memberHits = mt.filter((t, i) => t.length > 1 && (rt.some((r) => pair(r, i)) || (t.length >= 6 && a.includes(t)) || runTogether(t))).length;
     const memberSig = mt.filter((t) => t.length > 1).length || 1;
     // The list's first name should be the payer's first name (initials like "R" skipped).
-    const firstHit = tokenMatches(rt[0], mt.find((t) => t.length > 1) ?? "") ? 1 : 0;
+    const firstIdx = mt.findIndex((t) => t.length > 1);
+    const firstHit = (firstIdx >= 0 && pair(rt[0], firstIdx)) || (rt[0].length >= 5 && letters(name).startsWith(rt[0])) ? 1 : 0;
     let score = 50 * (rosterHits / rt.length) + 30 * (memberHits / memberSig) + 15 * firstHit;
     // Both have a surname and they differ ("Anita Bose" vs "Anita Rao"): different people.
-    const sig = mt.filter((t) => t.length > 1);
-    const last = rt[rt.length - 1];
-    if (rt.length > 1 && sig.length > 1 && !hit(last, mt) && !rt.some((t) => tokenMatches(t, sig[sig.length - 1]))) {
+    const sigIdx = mt.map((t, i) => (t.length > 1 ? i : -1)).filter((i) => i >= 0);
+    const lastSig = sigIdx[sigIdx.length - 1];
+    if (rt.length > 1 && sigIdx.length > 1 && !hit(rt[rt.length - 1]) && !rt.some((t) => pair(t, lastSig))) {
       score = Math.min(score, 50);
     }
     best = Math.max(best, Math.round(score));
@@ -111,14 +144,28 @@ export function matchRoster(roster: RosterEntry[], members: Member[], payments: 
   const taken = new Set<string>();
   const results = new Map<string, RosterMatch>();
 
-  const scored = roster.map((entry) => ({
-    entry,
-    candidates: members
-      .map((member) => ({ member, score: matchScore(entry, member) }))
-      .filter((c) => c.score >= 40)
-      .sort((x, y) => y.score - x.score)
-      .slice(0, 5),
-  }));
+  // A single-name entry ("Rajni") whose first name others on the list share can only be a possible
+  // match, decided before assignment so a fuller entry ("Rajni Divya Kumar") gets first claim.
+  const firstNames = roster.map((e) => tokens(e.name)[0] ?? "");
+  const similarFirst = (a: string, b: string) =>
+    a === b || nearSpelling(a, b) || (Math.min(a.length, b.length) >= 5 && (a.startsWith(b) || b.startsWith(a)));
+  const namesakesOf = (entry: RosterEntry) => {
+    const first = tokens(entry.name)[0] ?? "";
+    return tokens(entry.name).length === 1 ? firstNames.filter((f) => similarFirst(f, first)).length : 1;
+  };
+
+  const scored = roster.map((entry) => {
+    const ambiguous = namesakesOf(entry) > 1;
+    return {
+      entry,
+      candidates: members
+        .map((member) => ({ member, score: matchScore(entry, member) }))
+        .map((c) => (ambiguous && c.score < 95 ? { ...c, score: Math.min(c.score, 70) } : c))
+        .filter((c) => c.score >= 40)
+        .sort((x, y) => y.score - x.score)
+        .slice(0, 5),
+    };
+  });
 
   for (const { entry, candidates } of scored) {
     if (entry.linkedMemberId === undefined) continue;
@@ -158,13 +205,11 @@ export function matchRoster(roster: RosterEntry[], members: Member[], payments: 
   }
 
   // A match resting on a first name that several people on the list share needs a human check.
-  const firstNames = roster.map((e) => tokens(e.name)[0] ?? "");
-  const sameFirstName = (a: string, b: string) => a === b || (Math.min(a.length, b.length) >= 5 && tokenMatches(a, b));
   for (const r of results.values()) {
     // Only single-name entries ("Anil") rest on the first name alone.
     if (!r.member || r.confidence === "manual" || r.paidBy || tokens(r.entry.name).length > 1) continue;
     const first = tokens(r.entry.name)[0] ?? "";
-    const namesakes = firstNames.filter((f) => sameFirstName(f, first)).length;
+    const namesakes = namesakesOf(r.entry);
     if (namesakes > 1) {
       r.confidence = "possible";
       r.note = `${namesakes} people on your list are called ${first[0]}${first.slice(1).toLowerCase()}`;

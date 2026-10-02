@@ -71,6 +71,44 @@ describe("parseContactLabel", () => {
   });
 });
 
+describe("matchRoster spelling and prefixes", () => {
+  const d: Dataset = {
+    accountHolder: "JANE OWNER",
+    sources: [],
+    txns: [
+      credit("2026-02-01", "KAVYA RAMESH", "kavyar@okaxis", 4000),
+      credit("2026-02-02", "ABHISEK RAO", "abhisekrao@okaxis", 4000),
+      credit("2026-02-03", "LALITAKUMARI", "7000000001@upi", 4000),
+      credit("2026-02-04", "NEHA SHARMA", "nehajoshi@okicici", 4000),
+      credit("2026-02-05", "SANYA SHARMA", "sanya@okicici", 4000),
+    ],
+  };
+  const ms = analyse(d, DEFAULT_SETTINGS, "2026-02-28").members;
+  const m = byName(matchRoster(parseRosterText("Kavyansh\nAbhishek Rao\nLalita Singh\nNeha\nNeha Joshi Sharma\nShaima", "t"), ms));
+
+  it("doesn't treat a different, longer name as a cut-off one", () => {
+    expect(m["Kavyansh"].member).toBeNull();
+  });
+
+  it("matches one-letter spelling differences in longer names", () => {
+    expect(m["Abhishek Rao"].member?.name).toBe("Abhisek Rao");
+  });
+
+  it("finds a first name inside a run-together bank name", () => {
+    expect(m["Lalita Singh"]).toMatchObject({ confidence: "possible" });
+    expect(m["Lalita Singh"].member?.name).toBe("Lalitakumari");
+  });
+
+  it("gives a full name first claim over a single shared first name", () => {
+    expect(m["Neha Joshi Sharma"].member?.name).toBe("Neha Sharma");
+    expect(m["Neha"].member).toBeNull();
+  });
+
+  it("doesn't match short names that differ by a letter", () => {
+    expect(m["Shaima"].member).toBeNull();
+  });
+});
+
 describe("matchRoster", () => {
   const roster = parseRosterText(
     ["Meera Venkatesh", "Rohan Desai", "Tara Menon", "Vikram Nair", "Ishaan Kulkarni", "Neha Joshi", "Anita Bose", "Kiran P 9876501234", "Nobody Here"].join("\n"),
